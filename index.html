@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <title>MOBA Prototype - Godot? No, Phaser + Supabase!</title>
+    <style>
+        body {
+            margin: 0;
+            background: #1a1a2e;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            font-family: 'Courier New', monospace;
+            color: #eee;
+        }
+        #game-container { border: 2px solid #444; border-radius: 8px; overflow: hidden; }
+        #info { margin-top: 12px; font-size: 14px; color: #aaa; text-align: center; }
+        #supabase-status { color: #f0c040; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div id="game-container"></div>
+    <div id="info">
+        <span id="supabase-status">⏳ Menghubungkan ke Supabase...</span><br>
+        Klik kiri di tanah = Gerak | Dekati creep = Auto-attack | Creep punya AI State Machine
+    </div>
+
+    <!-- Phaser 3 -->
+    <script src="https://cdn.jsdelivr.net/npm/phaser@3/dist/phaser.min.js"></script>
+    <!-- Supabase JS Client -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+    <script>
+    // ============================================
+    // KONFIGURASI SUPABASE
+    // ============================================
+    const SUPABASE_URL = 'https://mlsibwihfzehqcdawrdh.supabase.co';
+    const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1sc2lid2loZnplaHFjZGF3cmRoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgxMTcwNTEsImV4cCI6MjEwMzY5MzA1MX0.faKWNZqTLE6nEH6nPw0L4uFepTy6ZvqrZDy2BaHcWxs';
+    const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    // ============================================
+    // SCENE 1: BOOT (Load Data dari Supabase)
+    // ============================================
+    class BootScene extends Phaser.Scene {
+        constructor() { super('BootScene'); }
+
+        async create() {
+            const statusEl = document.getElementById('supabase-status');
+            try {
+                const { data, error } = await supabaseClient.from('heroes').select('*');
+                if (error) throw error;
+
+                if (data && data.length > 0) {
+                    this.registry.set('heroes', data);
+                    statusEl.textContent = `✅ Supabase terhubung! ${data.length} hero dimuat.`;
+                    statusEl.style.color = '#40f040';
+                } else {
+                    throw new Error('Tabel heroes kosong');
+                }
+            } catch (e) {
+                console.warn('Gagal fetch Supabase, pakai fallback:', e.message);
+                this.registry.set('heroes', [
+                    { id: 1, name: 'Warrior', base_hp: 600, base_damage: 55, attack_range: 70, move_speed: 200 },
+                    { id: 2, name: 'Mage', base_hp: 400, base_damage: 80, attack_range: 120, move_speed: 170 }
+                ]);
+                statusEl.textContent = '⚠️ Supabase gagal, pakai data fallback.';
+                statusEl.style.color = '#f04040';
+            }
+
+            // Tunggu 1.5 detik biar user baca status, lalu lanjut
+            this.time.delayedCall(1500, () => this.scene.start('GameScene'));
+        }
+    }
+
+    // ============================================
+    // SCENE 2: GAME (Main Gameplay)
+    // ============================================
+    class GameScene extends Phaser.Scene {
+        constructor() { super('GameScene'); }
+
+        create() {
+            const heroes = this.registry.get('heroes');
+            this.heroData = heroes[0]; // Pakai hero pertama (Warrior)
+
+            // --- Buat Texture Programmatik (tanpa file gambar) ---
+            this.createTextures();
+
+            // --- Background Grid ---
+            this.drawGrid();
+
+            // --- Base Creep (posisi retreat) ---
+            this.creepBaseX = 700;
+            this.creepBaseY = 300;
+            const baseGfx = this.add.graphics();
+            baseGfx.fillStyle(0x663333, 0.5);
+            baseGfx.fillRoundedRect(this.creepBaseX - 30, this.creepBaseY - 30, 60, 60, 8);
+            this.add.text(this.creepBaseX, this.creepBaseY + 40, 'BASE CREEP', { fontSize: '10px', color: '#aa6666' }).setOrigin(0.5);
+
+            // --- Player ---
+            this.playerHp = this.heroData.base_hp;
+            this.playerMaxHp = this.heroData.base_hp;
+            this.playerDmg = this.heroData.base_damage;
+            this.playerAtkRange = this.heroData.attack_range;
+            this.playerSpeed = this.heroData.move_speed;
+            this.playerLastAtk = 0;
+            this.playerAtkCooldown = 800;
+
+            this.player = this.physics.add.sprite(100, 300, 'player');
+            this.player.setCollideWorldBounds(true);
+            this.playerNameText = this.add.text(0, 0, `${this.heroData.name} (YOU)`, { fontSize: '11px', color: '#40ff40', fontStyle: 'bold' }).setOrigin(0.5);
+            this.playerHpBarBg = this.add.graphics();
+            this.playerHpBarFg = this.add.graphics();
+
+            // --- Creep (AI) ---
+            this.creepHp = 300;
+            this.creepMaxHp = 300;
+            this.creepDmg = 25;
+            this.creepAtkRange = 55;
+            this.creepSpeed = 100;
+            this.creepLastAtk = 0;
+            this.creepAtkCooldown = 1200;
+            this.creepRetreatThreshold = 90; // 30% dari 300
+            this.creepState = 'IDLE';
+            this.creepAlive = true;
+
+            this.creep = this.physics.add.sprite(this.creepBaseX, this.creepBaseY, 'creep');
+            this.creep.setCollideWorldBounds(true);
+            this.creepNameText = this.add.text(0, 0, 'Creep (AI)', { fontSize: '11px', color: '#ff4040' }).setOrigin(0.5);
+            this.creepHpBarBg = this.add.graphics();
+            this.creepHpBarFg = this.add.graphics();
+            this.creepStateText = this.add.text(0, 0, 'IDLE', { fontSize: '10px', color: '#ffff00', fontStyle: 'bold' }).setOrigin(0.5);
+
+            // --- UI ---
+            this.stateLogText = this.add.text(10, 10, '🧠 AI State: IDLE', { fontSize: '14px', color: '#f0c040', fontFamily: 'Courier New' });
+            this.heroInfoText = this.add.text(10, 560, `Hero: ${this.heroData.name} | HP: ${this.playerHp} | DMG: ${this.playerDmg} | Range: ${this.playerAtkRange}`, { fontSize: '12px', color: '#88aaff' });
+            this.killText = this.add.text(400, 280, '', { fontSize: '28px', color: '#ffff00', fontStyle: 'bold', stroke: '#000', strokeThickness: 4 }).setOrigin(0.5);
+
+            // --- Input: Klik untuk gerak ---
+            this.input.on('pointerdown', (pointer) => {
+                if (!this.player.active) return;
+                this.physics.moveTo(this.player, pointer.x, pointer.y, this.playerSpeed);
+            });
+
+            // --- World bounds ---
+            this.physics.world.setBounds(0, 0, 800, 600);
+        }
+
+        createTextures() {
+            // Player (hijau)
+            const pg = this.make.graphics({ add: false });
+            pg.fillStyle(0x22cc44);
+            pg.fillCircle(18, 18, 18);
+            pg.lineStyle(2, 0x88ff88);
+            pg.strokeCircle(18, 18, 18);
+            pg.generateTexture('player', 36, 36);
+            pg.destroy();
+
+            // Creep (merah)
+            const cg = this.make.graphics({ add: false });
+            cg.fillStyle(0xcc2222);
+            cg.fillCircle(14, 14, 14);
+            cg.lineStyle(2, 0xff8888);
+            cg.strokeCircle(14, 14, 14);
+            cg.generateTexture('creep', 28, 28);
+            cg.destroy();
+        }
+
+        drawGrid() {
+            const gfx = this.add.graphics();
+            gfx.lineStyle(1, 0x333355, 0.3);
+            for (let x = 0; x < 800; x += 40) { gfx.moveTo(x, 0); gfx.lineTo(x, 600); }
+            for (let y = 0; y < 600; y += 40) { gfx.moveTo(0, y); gfx.lineTo(800, y); }
+            gfx.strokePath();
+        }
+
+        update(time) {
+            if (!this.creepAlive || !this.player.active) return;
+
+            const distToCreep = Phaser.Math.Distance.Between(this.player.x, this.player.y, this.creep.x, this.creep.y);
+
+            // ===========================
+            // 🧠 AI STATE MACHINE (Creep)
+            // ===========================
+            let newState = this.creepState;
+
+            if (this.creepHp <= this.creepRetreatThreshold) {
+                newState = 'RETREAT';
+            } else if (distToCreep <= this.creepAtkRange) {
+                newState = 'ATTACK';
+            } else {
+                newState = 'MOVE_TO_PLAYER';
+            }
+
+            // Log perubahan state
+            if (newState !== this.creepState) {
+                this.creepState = newState;
+                this.stateLogText.setText(`🧠 AI State: ${this.creepState}`);
+                console.log(`[AI] State berubah → ${this.creepState}`);
+            }
+
+            // Eksekusi state
+            switch (this.creepState) {
+                case 'MOVE_TO_PLAYER':
+                    this.physics.moveToObject(this.creep, this.player, this.creepSpeed);
+                    break;
+
+                case 'ATTACK':
+                    this.creep.setVelocity(0, 0);
+                    if (time - this.creepLastAtk > this.creepAtkCooldown) {
+                        this.creepLastAtk = time;
+                        this.playerHp -= this.creepDmg;
+                        this.flashSprite(this.player, 0xffffff);
+                        console.log(`[AI] Creep menyerang! Player HP: ${this.playerHp}`);
+                        if (this.playerHp <= 0) this.playerDie();
+                    }
+                    break;
+
+                case 'RETREAT':
+                    this.physics.moveTo(this.creep, this.creepBaseX, this.creepBaseY, this.creepSpeed * 1.5);
+                    // Kalau sudah sampai base, heal full
+                    if (Phaser.Math.Distance.Between(this.creep.x, this.creep.y, this.creepBaseX, this.creepBaseY) < 15) {
+                        this.creepHp = this.creepMaxHp;
+                        this.creep.setVelocity(0, 0);
+                        console.log('[AI] Creep sampai base, HP full!');
+                    }
+                    break;
+            }
+
+            // ===========================
+            // ⚔️ PLAYER AUTO-ATTACK
+            // ===========================
+            if (distToCreep <= this.playerAtkRange) {
+                this.player.setVelocity(0, 0); // Berhenti kalau dalam range
+                if (time - this.playerLastAtk > this.playerAtkCooldown) {
+                    this.playerLastAtk = time;
+                    this.creepHp -= this.playerDmg;
+                    this.flashSprite(this.creep, 0xffffff);
+                    console.log(`[Player] Serangan! Creep HP: ${this.creepHp}`);
+                    if (this.creepHp <= 0) this.creepDie();
+                }
+            }
+
+            // ===========================
+            // 🎨 UPDATE UI (HP Bars, Labels)
+            // ===========================
+            this.updateHpBar(this.player, this.playerHpBarBg, this.playerHpBarFg, this.playerHp, this.playerMaxHp, 0x22cc44);
+            this.playerNameText.setPosition(this.player.x, this.player.y - 32);
+
+            this.updateHpBar(this.creep, this.creepHpBarBg, this.creepHpBarFg, this.creepHp, this.creepMaxHp, 0xcc2222);
+            this.creepNameText.setPosition(this.creep.x, this.creep.y - 28);
+            this.creepStateText.setPosition(this.creep.x, this.creep.y + 24);
+            this.creepStateText.setText(this.creepState);
+
+            this.heroInfoText.setText(`Hero: ${this.heroData.name} | HP: ${Math.max(0, this.playerHp)}/${this.playerMaxHp} | DMG: ${this.playerDmg} | Range: ${this.playerAtkRange}`);
+        }
+
+        // --- Helper Functions ---
+        updateHpBar(target, bgGfx, fgGfx, hp, maxHp, color) {
+            const w = 40, h = 5;
+            const x = target.x - w / 2, y = target.y - 22;
+            bgGfx.clear().fillStyle(0x333333).fillRect(x, y, w, h);
+            fgGfx.clear().fillStyle(color).fillRect(x, y, w * Math.max(0, hp / maxHp), h);
+        }
+
+        flashSprite(sprite, tint) {
+            sprite.setTint(tint);
+            this.time.delayedCall(100, () => sprite.clearTint());
+        }
+
+        creepDie() {
+            this.creepAlive = false;
+            this.creep.setVisible(false);
+            this.creep.setVelocity(0, 0);
+            this.creepHpBarBg.clear();
+            this.creepHpBarFg.clear();
+            this.creepNameText.setText('');
+            this.creepStateText.setText('');
+            this.killText.setText('🎉 CREEP KILLED!');
+            this.stateLogText.setText('🧠 AI State: DEAD');
+            console.log('[Game] Creep mati! Respawning dalam 3 detik...');
+
+            // Respawn setelah 3 detik
+            this.time.delayedCall(3000, () => {
+                this.creepHp = this.creepMaxHp;
+                this.creep.setPosition(this.creepBaseX, this.creepBaseY);
+                this.creep.setVisible(true);
+                this.creepAlive = true;
+                this.creepState = 'IDLE';
+                this.killText.setText('');
+                this.stateLogText.setText('🧠 AI State: MOVE_TO_PLAYER');
+                console.log('[Game] Creep respawn!');
+            });
+        }
+
+        playerDie() {
+            this.player.setVisible(false);
+            this.player.setVelocity(0, 0);
+            this.playerHpBarBg.clear();
+            this.playerHpBarFg.clear();
+            this.playerNameText.setText('');
+            this.killText.setText('💀 YOU DIED!');
+            console.log('[Game] Player mati! Respawning dalam 3 detik...');
+
+            this.time.delayedCall(3000, () => {
+                this.playerHp = this.playerMaxHp;
+                this.player.setPosition(100, 300);
+                this.player.setVisible(true);
+                this.killText.setText('');
+                console.log('[Game] Player respawn!');
+            });
+        }
+    }
+
+    // ============================================
+    // START PHASER
+    // ============================================
+    const config = {
+        type: Phaser.AUTO,
+        width: 800,
+        height: 600,
+        parent: 'game-container',
+        backgroundColor: '#16213e',
+        physics: {
+            default: 'arcade',
+            arcade: { debug: false }
+        },
+        scene: [BootScene, GameScene]
+    };
+
+    const game = new Phaser.Game(config);
+    </script>
+</body>
+</html>
