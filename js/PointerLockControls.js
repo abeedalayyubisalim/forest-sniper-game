@@ -1,4 +1,4 @@
-// PointerLockControls - Inline version (tidak perlu load dari CDN)
+// js/PointerLockControls.js
 THREE.PointerLockControls = function (camera, domElement) {
     this.camera = camera;
     this.domElement = domElement || document.body;
