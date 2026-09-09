@@ -3,88 +3,109 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Forest Sniper Hunter</title>
+    <title>Forest Sniper Hunter 3D - FPS</title>
     <link rel="stylesheet" href="css/style.css">
     <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Roboto:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        #blocker {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.5);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+        #instructions {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            text-align: center;
+        }
+        #instructions h1 {
+            font-family: 'Press Start 2P', cursive;
+            color: #FFD700;
+            font-size: 40px;
+            margin-bottom: 20px;
+        }
+        #instructions p {
+            font-size: 18px;
+            color: white;
+            line-height: 1.6;
+        }
+        .key {
+            background: #444;
+            padding: 5px 15px;
+            border-radius: 5px;
+            border: 2px solid #666;
+            display: inline-block;
+            margin: 2px;
+        }
+    </style>
 </head>
 <body>
-    <div id="game-container">
-        <!-- Start Screen -->
-        <div id="start-screen" class="screen active">
-            <h1> FOREST SNIPER 🦌</h1>
-            <p>Berburu di Hutan Liar</p>
-            <button id="start-btn" class="btn-primary">MULAI BERBURU</button>
-            <div class="instructions">
-                <h3>Cara Bermain:</h3>
-                <ul>
-                    <li>Cari senjata secara random di hutan</li>
-                    <li>Buru hewan untuk dapat poin</li>
-                    <li>Simpan hasil buruan ke database</li>
-                </ul>
-            </div>
+    <div id="blocker">
+        <div id="instructions">
+            <h1>🌲 FOREST SNIPER 3D 🦌</h1>
+            <p style="font-size:36px">Klik untuk Bermain</p>
+            <br/>
+            <p>
+                Gerakan: <span class="key">W</span><span class="key">A</span><span class="key">S</span><span class="key">D</span><br/>
+                Lompat: <span class="key">SPACE</span><br/>
+                Aim: Mouse<br/>
+                Tembak: <span class="key">Klik Kiri</span><br/>
+                Ganti Senjata: <span class="key">1</span><span class="key">2</span><span class="key">3</span>
+            </p>
         </div>
-
-        <!-- Game Screen -->
-        <div id="game-screen" class="screen">
-            <div id="hud">
-                <div class="hud-left">
-                    <div id="score">Score: 0</div>
-                    <div id="weapon-display">Weapon: None</div>
-                </div>
-                <div class="hud-right">
-                    <div id="ammo">Ammo: ∞</div>
-                    <div id="time">Time: 00:00</div>
-                </div>
-            </div>
-
-            <div id="forest-map">
-                <canvas id="game-canvas"></canvas>
-                <div id="crosshair"></div>
-            </div>
-
-            <div id="inventory">
-                <h3>Inventory</h3>
-                <div id="weapon-slots">
-                    <div class="slot" data-weapon="axe">🪓 Kapak</div>
-                    <div class="slot" data-weapon="bow"> Panah</div>
-                    <div class="slot" data-weapon="sniper">🔫 Sniper</div>
-                </div>
-            </div>
-
-            <div id="controls">
-                <button id="save-btn" class="btn-secondary">💾 Save Game</button>
-                <button id="menu-btn" class="btn-secondary"> Menu</button>
-            </div>
-        </div>
-
-        <!-- Menu Screen -->
-        <div id="menu-screen" class="screen">
-            <h2>Menu</h2>
-            <button id="resume-btn" class="btn-primary">Lanjut Bermain</button>
-            <button id="leaderboard-btn" class="btn-primary"> Leaderboard</button>
-            <button id="new-game-btn" class="btn-primary">🔄 Game Baru</button>
-        </div>
-
-        <!-- Leaderboard Screen -->
-        <div id="leaderboard-screen" class="screen">
-            <h2>🏆 Leaderboard</h2>
-            <div id="leaderboard-list"></div>
-            <button id="back-menu-btn" class="btn-primary">Kembali</button>
-        </div>
-
-        <!-- Notification -->
-        <div id="notification"></div>
     </div>
 
-    <!-- Supabase -->
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <div id="game-container">
+        <div id="hud">
+            <div class="hud-left">
+                <div id="score">Score: 0</div>
+                <div id="weapon-display">Weapon: None</div>
+                <div id="health">❤️ Health: 100</div>
+            </div>
+            <div class="hud-right">
+                <div id="ammo">Ammo: ∞</div>
+                <div id="time">Time: 00:00</div>
+            </div>
+        </div>
+
+        <div id="inventory">
+            <h3> Inventory</h3>
+            <div id="weapon-slots">
+                <div class="slot" data-weapon="axe">🪓 Kapak</div>
+                <div class="slot" data-weapon="bow">🏹 Panah</div>
+                <div class="slot" data-weapon="sniper">🔫 Sniper</div>
+            </div>
+        </div>
+
+        <div id="controls">
+            <button id="save-btn" class="btn-secondary"> Save Game</button>
+            <button id="menu-btn" class="btn-secondary">📋 Menu</button>
+        </div>
+
+        <div id="crosshair-3d"></div>
+    </div>
+
+    <!-- Three.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- PointerLockControls untuk FPS -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/PointerLockControls.js"></script>
     
     <!-- Game Scripts -->
     <script src="js/config.js"></script>
     <script src="js/supabase.js"></script>
     <script src="js/weapons.js"></script>
     <script src="js/animals.js"></script>
-    <script src="js/map.js"></script>
-    <script src="js/game.js"></script>
+    <script src="js/map3d.js"></script>
+    <script src="js/game3d.js"></script>
 </body>
 </html>
