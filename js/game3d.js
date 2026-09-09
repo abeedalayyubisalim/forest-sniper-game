@@ -35,15 +35,30 @@ class Game3D {
     }
 
     async init() {
-        await supabaseManager.init();
-        this.setupScene();
-        this.setupControls();
-        this.setupLights();
-        this.setupEventListeners();
-        this.animate();
+        try {
+            console.log('Initializing game...');
+            await supabaseManager.init();
+            this.setupScene();
+            this.setupControls();
+            this.setupLights();
+            this.setupEventListeners();
+            this.animate();
+            console.log('Game initialized successfully!');
+        } catch (error) {
+            console.error('Error initializing game:', error);
+            this.showError('Error: ' + error.message);
+        }
+    }
+
+    showError(message) {
+        const errorDiv = document.getElementById('error-message');
+        errorDiv.textContent = message;
+        errorDiv.style.display = 'block';
     }
 
     setupScene() {
+        console.log('Setting up scene...');
+        
         // Scene
         this.scene = new THREE.Scene();
         this.scene.background = new THREE.Color(0x87CEEB);
@@ -53,7 +68,7 @@ class Game3D {
         this.camera = new THREE.PerspectiveCamera(
             75,
             window.innerWidth / window.innerHeight,
-            1,
+            0.1,
             1000
         );
         this.camera.position.y = 10;
@@ -69,21 +84,27 @@ class Game3D {
         // Map
         this.forestMap = new ForestMap3D(this.scene);
         this.forestMap.generate();
+        
+        console.log('Scene setup complete!');
     }
 
     setupControls() {
+        console.log('Setting up controls...');
+        
         this.controls = new THREE.PointerLockControls(this.camera, document.body);
 
         const blocker = document.getElementById('blocker');
         const instructions = document.getElementById('instructions');
 
-        instructions.addEventListener('click', () => {
+        // Click anywhere on blocker to lock pointer
+        blocker.addEventListener('click', () => {
+            console.log('Blocker clicked!');
             this.controls.lock();
         });
 
         this.controls.addEventListener('lock', () => {
-            instructions.style.display = 'none';
-            blocker.style.display = 'none';
+            console.log('Pointer locked!');
+            blocker.classList.add('hidden');
             this.state = 'playing';
             if (this.startTime === 0) {
                 this.startGame();
@@ -91,15 +112,18 @@ class Game3D {
         });
 
         this.controls.addEventListener('unlock', () => {
-            blocker.style.display = 'flex';
-            instructions.style.display = 'flex';
+            console.log('Pointer unlocked!');
+            blocker.classList.remove('hidden');
             this.state = 'paused';
         });
 
         this.scene.add(this.controls.getObject());
+        console.log('Controls setup complete!');
     }
 
     setupLights() {
+        console.log('Setting up lights...');
+        
         // Ambient light
         const ambientLight = new THREE.AmbientLight(0x404040, 0.6);
         this.scene.add(ambientLight);
@@ -115,9 +139,13 @@ class Game3D {
         directionalLight.shadow.mapSize.width = 2048;
         directionalLight.shadow.mapSize.height = 2048;
         this.scene.add(directionalLight);
+        
+        console.log('Lights setup complete!');
     }
 
     setupEventListeners() {
+        console.log('Setting up event listeners...');
+        
         // Keyboard
         const onKeyDown = (event) => {
             switch (event.code) {
@@ -187,12 +215,20 @@ class Game3D {
         });
 
         // UI Buttons
-        document.getElementById('save-btn').addEventListener('click', () => this.saveGame());
-        document.getElementById('menu-btn').addEventListener('click', () => this.controls.unlock());
+        document.getElementById('save-btn').addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.saveGame();
+        });
+        
+        document.getElementById('menu-btn').addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.controls.unlock();
+        });
 
         // Weapon slots
         document.querySelectorAll('.slot').forEach(slot => {
-            slot.addEventListener('click', () => {
+            slot.addEventListener('click', (e) => {
+                e.stopPropagation();
                 if (this.weaponManager.switchWeapon(slot.dataset.weapon)) {
                     document.querySelectorAll('.slot').forEach(s => s.classList.remove('active'));
                     slot.classList.add('active');
@@ -207,9 +243,12 @@ class Game3D {
             this.camera.updateProjectionMatrix();
             this.renderer.setSize(window.innerWidth, window.innerHeight);
         });
+        
+        console.log('Event listeners setup complete!');
     }
 
     startGame() {
+        console.log('Starting game...');
         this.startTime = Date.now();
         this.score = 0;
         this.time = 0;
@@ -227,6 +266,7 @@ class Game3D {
 
         this.updateTimer();
         this.spawnLoop();
+        console.log('Game started!');
     }
 
     spawnLoop() {
@@ -246,7 +286,10 @@ class Game3D {
     animate() {
         requestAnimationFrame(() => this.animate());
 
-        if (this.state !== 'playing') return;
+        if (this.state !== 'playing') {
+            this.renderer.render(this.scene, this.camera);
+            return;
+        }
 
         const time = performance.now();
         const delta = (time - this.prevTime) / 1000;
@@ -254,7 +297,7 @@ class Game3D {
         // Movement
         this.velocity.x -= this.velocity.x * 10.0 * delta;
         this.velocity.z -= this.velocity.z * 10.0 * delta;
-        this.velocity.y -= 9.8 * 100.0 * delta; // Gravity
+        this.velocity.y -= 9.8 * 100.0 * delta;
 
         this.direction.z = Number(this.moveForward) - Number(this.moveBackward);
         this.direction.x = Number(this.moveRight) - Number(this.moveLeft);
@@ -337,7 +380,6 @@ class Game3D {
         if (intersects.length > 0) {
             const intersect = intersects[0];
             if (intersect.distance <= weapon.range) {
-                // Find animal and damage
                 const result = this.animalManager.checkHit(intersect.object, weapon.damage);
                 
                 if (result) {
@@ -415,17 +457,19 @@ class Game3D {
     }
 
     showNotification(message) {
-        // Bisa tambahkan notification UI di sini
-        console.log(message);
-    }
-
-    getAnimalCount() {
-        return this.animalManager.getAnimalCount();
+        const notif = document.getElementById('notification');
+        notif.textContent = message;
+        notif.style.display = 'block';
+        
+        setTimeout(() => {
+            notif.style.display = 'none';
+        }, 2000);
     }
 }
 
 // Initialize game
 let game;
 document.addEventListener('DOMContentLoaded', () => {
+    console.log('DOM loaded, initializing game...');
     game = new Game3D();
 });
