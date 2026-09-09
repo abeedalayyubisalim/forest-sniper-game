@@ -31,7 +31,6 @@ class AnimalManager3D {
         if (animal && animal.alive) {
             const killed = animal.takeDamage(damage);
             if (killed) {
-                // Remove mesh
                 animal.mesh.visible = false;
                 setTimeout(() => {
                     this.meshes = this.meshes.filter(m => m !== animal.mesh);
@@ -59,7 +58,7 @@ class Animal3D {
         this.maxHealth = data.health;
         this.health = data.health;
         this.speed = data.speed;
-        this.size = data.size / 10; // Scale down
+        this.size = data.size / 10;
         this.color = data.color || 0x8B4513;
         this.alive = true;
         this.id = Date.now() + Math.random();
@@ -131,12 +130,10 @@ class Animal3D {
         this.mesh.position.x += this.direction.x * this.speed;
         this.mesh.position.z += this.direction.z * this.speed;
 
-        // Boundary check
         if (Math.abs(this.mesh.position.x) > 900 || Math.abs(this.mesh.position.z) > 900) {
             this.direction.multiplyScalar(-1);
         }
 
-        // Rotate to face direction
         this.mesh.lookAt(
             this.mesh.position.x + this.direction.x,
             this.mesh.position.y,
